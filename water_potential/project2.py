@@ -102,9 +102,16 @@ def add_gaussian_noise(H):
     return H
 
 if __name__ == '__main__':
-
-    datalist = gb.glob('data/*')
-    nfolders = len(datalist)
+    try:
+        data_folder = sys.argv[1]
+        datalist = gb.glob('{:s}/*/'.format(data_folder))
+    except IndexError:
+        raise ValueError(("Pass the folder where all the sub-folders with the"
+                         " trajectory data are stored"))
+    assert len(datalist) > 0, ("The folder passed contained no subdirectories"
+                               ", please make sure that the specified path"
+                               " leads to the folder with the appropriate "
+                               "subfolders")
     # Pop the first folder that will be considered the reference
     ref_folder = datalist.pop(0)
     print('Procesing folder {:s}'.format(ref_folder))
