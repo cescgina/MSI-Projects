@@ -17,7 +17,7 @@ class Simulation():
     Additionally, it also has attributes needed to calculate the histogram of
     water molecules
     """
-    def __init__(self, folder, ref_mol, maxvec, minvec, bins, edges, res):
+    def __init__(self, folder, ref_sim, ref_mol):
         """The init method loads the pdb and trajectory files into an HTMD
         molecule, and prepares the molecule for the posterior work (align and
         wrap, see HTMD documentation for a description of the methods)"""
@@ -25,11 +25,11 @@ class Simulation():
         self.mol.read('{:s}/traj.xtc'.format(folder))
         self.mol.wrap('protein')
         self.mol.align('protein', refmol=ref_mol)
-        self.maxvec = maxvec
-        self.minvec = minvec
-        self.bins = bins
-        self.edges = edges
-        self.res = res
+        self.maxvec = ref_sim.maxvec
+        self.minvec = ref_sim.minvec
+        self.bins = ref_sim.bins
+        self.edges = ref_sim.edges
+        self.res = ref_sim.res
 
     def prepare_coords(self):
         """Filters the molecule object and extracts its water coordinates to
@@ -40,25 +40,39 @@ class Simulation():
         # which can be used to calculate the histogram
         self.traj_flat = traj_O.transpose(2, 0, 1).reshape(-1, traj_O.shape[1])
 
-    def water_hist(self, edges=None, bins=None):
+    def water_hist(self):
         """Calculates the histogram of water molecules to latter use it to
         estimate the free energy"""
-        sim.prepare_coords()
-        if self.bins is None:
-            # This block is only executed for the reference molecule, that is,
-            # the first molecule loaded
-            maxval = self.traj_flat.max(axis=0)
-            maxval = maxval[maxval < 100].max()
-            minval = self.traj_flat.min(axis=0)
-            minval = minval[minval > -100].max()
-            self.maxvec = np.array([maxval+15]*3)
-            self.minvec = np.array([minval-15]*3)
-            self.bins = np.ceil((self.maxvec-self.minvec)/self.res)
-            # Tuple of ints needed to pass to histogram
-            self.bins = tuple(self.bins.astype(int))
-            self.edges = [np.arange(self.minvec[0]-self.res[0]/2,
-                                    self.maxvec[0]+self.res[0]/2,
-                                    self.res[0])]*3
+        self.prepare_coords()
+        self.H, foo = np.histogramdd(self.traj_flat, bins=self.edges)
+
+
+class SimulationRef(Simulation):
+    """The SimulationRef class is a special case of the Simulation class which
+    processes the first folder, considered as reference"""
+    def __init__(self, folder, res):
+        self.mol = ht.Molecule('{:s}/structure.pdb'.format(folder))
+        self.mol.read('{:s}/traj.xtc'.format(folder))
+        self.mol.wrap('protein')
+        self.mol.align('protein')
+        self.res = res
+
+    def water_hist(self):
+        """Calculates the histogram of water molecules to latter use it to
+        estimate the free energy"""
+        self.prepare_coords()
+        maxval = self.traj_flat.max(axis=0)
+        maxval = maxval[maxval < 100].max()
+        minval = self.traj_flat.min(axis=0)
+        minval = minval[minval > -100].max()
+        self.maxvec = np.array([maxval+15]*3)
+        self.minvec = np.array([minval-15]*3)
+        self.bins = np.ceil((self.maxvec-self.minvec)/self.res)
+        # Tuple of ints needed to pass to histogram
+        self.bins = tuple(self.bins.astype(int))
+        self.edges = [np.arange(self.minvec[0]-self.res[0]/2,
+                                self.maxvec[0]+self.res[0]/2,
+                                self.res[0])]*3
         self.H, foo = np.histogramdd(self.traj_flat, bins=self.edges)
 
 
@@ -95,22 +109,15 @@ if __name__ == '__main__':
     ref_folder = datalist.pop(0)
     print('Procesing folder {:s}'.format(ref_folder))
     res = np.array([1, 1, 1])  # Resolution of the grid (1 amstrong)
-    sim = Simulation(ref_folder, None, None, None, None, None, res)
-    ref_mol = copy.deepcopy(sim.mol)
-    sim.water_hist()
-    # Save the attributes used to calculate the histogram with the reference
-    # model so we can reuse them with the rest, and properly align them and
-    # obtain comparable results
-    bins = sim.bins
-    edges = sim.edges
-    H = sim.H
-    maxvec = sim.maxvec
-    minvec = sim.minvec
+    sim_ref = SimulationRef(ref_folder, res)
+    ref_mol = copy.deepcopy(sim_ref.mol)
+    sim_ref.water_hist()
+    H = sim_ref.H
     for folder in datalist:
         # Iterate over all the folder containing trajectory data, counting now
         # with a reference structure and histogram data (bins edges)
         print('Procesing folder {:s}'.format(folder))
-        sim = Simulation(folder, ref_mol, maxvec, minvec, bins, edges, res)
+        sim = Simulation(folder, sim_ref, ref_mol)
         sim.water_hist()
         H += sim.H
     Kb = 0.001987191  # kcal/mol/K
@@ -121,5 +128,6 @@ if __name__ == '__main__':
     H /= H.sum()  # Normalize so that it corresponds to a probability
     H += 1e-40  # Add a very small quantity to avoid taking the log of 0
     G = -Kb*T*np.log(H)
-    ht.molecule.util.writeVoxels(G, 'voxel.cube', minvec, maxvec, res)
+    ht.molecule.util.writeVoxels(G, 'voxel.cube', sim_ref.minvec,
+                                 sim_ref.maxvec, res)
     sys.exit()
