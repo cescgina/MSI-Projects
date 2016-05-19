@@ -27,7 +27,6 @@ class Simulation():
         self.mol.align('protein', refmol=ref_mol)
         self.maxvec = ref_sim.maxvec
         self.minvec = ref_sim.minvec
-        self.bins = ref_sim.bins
         self.edges = ref_sim.edges
         self.res = ref_sim.res
 
@@ -56,24 +55,14 @@ class SimulationRef(Simulation):
         self.mol.wrap('protein')
         self.mol.align('protein')
         self.res = res
-
-    def water_hist(self):
-        """Calculates the histogram of water molecules to latter use it to
-        estimate the free energy"""
-        self.prepare_coords()
-        maxval = self.traj_flat.max(axis=0)
-        maxval = maxval[maxval < 100].max()
-        minval = self.traj_flat.min(axis=0)
-        minval = minval[minval > -100].max()
-        self.maxvec = np.array([maxval+15]*3)
-        self.minvec = np.array([minval-15]*3)
-        self.bins = np.ceil((self.maxvec-self.minvec)/self.res)
-        # Tuple of ints needed to pass to histogram
-        self.bins = tuple(self.bins.astype(int))
+        bBox = ht.molecule.util.boundingBox(self.mol, sel='water')
+        maxval = bBox.max()
+        minval = bBox.min()
+        self.maxvec = np.array([maxval+40]*3)
+        self.minvec = np.array([minval-40]*3)
         self.edges = [np.arange(self.minvec[0]-self.res[0]/2,
                                 self.maxvec[0]+self.res[0]/2,
                                 self.res[0])]*3
-        self.H, foo = np.histogramdd(self.traj_flat, bins=self.edges)
 
 
 def add_gaussian_noise(H):
