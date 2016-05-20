@@ -126,4 +126,5 @@ if __name__ == '__main__':
     G = -Kb*T*np.log(H)
     ht.molecule.util.writeVoxels(G, 'voxel.cube', sim_ref.minvec,
                                  sim_ref.maxvec, res)
+    ref_mol.write('ref_structure.pdb', type='pdb')
     sys.exit()
